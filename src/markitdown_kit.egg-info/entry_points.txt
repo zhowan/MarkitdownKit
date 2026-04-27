@@ -1,0 +1,2 @@
+[console_scripts]
+markitdown-kit = markitdown_kit.__main__:main

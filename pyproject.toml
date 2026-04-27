@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "markitdown-kit"
+version = "0.1.0"
+description = "A simple GUI app for converting files to Markdown with MarkItDown."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "markitdown[pdf,docx,pptx,xlsx,xls]>=0.1.5,<0.2",
+]
+
+[project.scripts]
+markitdown-kit-convert = "markitdown_kit.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

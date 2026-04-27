@@ -1,0 +1,6 @@
+.DS_Store
+.build
+.build-scratch
+.build-release
+.swift-home
+MarkitdownKitMac.app
