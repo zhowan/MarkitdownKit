@@ -2,15 +2,201 @@ import AppKit
 import SwiftUI
 
 private let rightColumnWidth: CGFloat = 300
+private let topCardHeight: CGFloat = 156
+private let mainCardHeight: CGFloat = 320
+
+enum SupportedLanguage {
+    case chinese
+    case english
+}
+
+enum AppLanguagePreference: String, CaseIterable, Identifiable {
+    case system
+    case chinese
+    case english
+
+    var id: String { rawValue }
+
+    func resolvedLanguage(systemLanguage: SupportedLanguage) -> SupportedLanguage {
+        switch self {
+        case .system:
+            systemLanguage
+        case .chinese:
+            .chinese
+        case .english:
+            .english
+        }
+    }
+}
+
+@MainActor
+final class LocalizationController: ObservableObject {
+    @Published var preference: AppLanguagePreference {
+        didSet {
+            UserDefaults.standard.set(preference.rawValue, forKey: Self.preferenceKey)
+        }
+    }
+
+    @Published private(set) var systemLanguage: SupportedLanguage
+
+    private static let preferenceKey = "appLanguagePreference"
+
+    init() {
+        let storedValue = UserDefaults.standard.string(forKey: Self.preferenceKey)
+        self.preference = AppLanguagePreference(rawValue: storedValue ?? "") ?? .system
+        self.systemLanguage = Self.detectSystemLanguage()
+
+        NotificationCenter.default.addObserver(
+            forName: NSLocale.currentLocaleDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.systemLanguage = Self.detectSystemLanguage()
+            }
+        }
+    }
+
+    var resolvedLanguage: SupportedLanguage {
+        preference.resolvedLanguage(systemLanguage: systemLanguage)
+    }
+
+    nonisolated private static func detectSystemLanguage() -> SupportedLanguage {
+        let preferred = Locale.preferredLanguages.first?.lowercased() ?? ""
+        return preferred.hasPrefix("zh") ? .chinese : .english
+    }
+}
+
+struct AppStrings {
+    let language: SupportedLanguage
+
+    func text(_ chinese: String, _ english: String) -> String {
+        switch language {
+        case .chinese:
+            chinese
+        case .english:
+            english
+        }
+    }
+
+    var appTitle: String { text("文件转 Markdown 小工具", "File to Markdown Tool") }
+    var appSubtitle: String { text("支持点选和拖拽导入文件。", "Import files by clicking or dragging them in.") }
+    var settingsTitle: String { text("输出设置", "Output Settings") }
+    var outputModeLabel: String { text("输出方式", "Output Mode") }
+    var languageTitle: String { text("语言", "Language") }
+    var chooseFolder: String { text("选择文件夹", "Choose Folder") }
+    var sameDirectoryHint: String { text("每个文件会在它自己的所在目录里生成 `.md`。", "Each file generates its `.md` in the same folder.") }
+    var filesTitle: String { text("待转换文件", "Files to Convert") }
+    var filesHint: String { text("可以点“添加文件”，也可以把文件直接拖到这个窗口里。", "Click “Add Files” or drag files directly into this window.") }
+    var emptyDropTitle: String { text("拖拽文件到这里", "Drop files here") }
+    var emptyDropSubtitle: String { text("或点击下方按钮选择文件", "Or click below to choose files") }
+    var addFiles: String { text("添加文件", "Add Files") }
+    var clearList: String { text("清空列表", "Clear List") }
+    var actionsTitle: String { text("操作", "Actions") }
+    var actionsHint: String { text("支持批量处理，默认在源文件旁生成 `.md` 文件。", "Batch conversion is supported. By default, `.md` files are created next to the source files.") }
+    var convertingButton: String { text("正在转换…", "Converting...") }
+    var convertButton: String { text("一键转换", "Convert") }
+    var openOutputDirectory: String { text("打开输出目录", "Open Output Folder") }
+    var logsTitle: String { text("运行日志", "Logs") }
+    var alertTitle: String { text("提示", "Notice") }
+    var alertDismiss: String { text("知道了", "OK") }
+    var outputDirectoryUpdated: String { text("输出目录已更新。", "Output folder updated.") }
+    var emptySelectionAlert: String { text("请先添加至少一个要转换的文件。", "Please add at least one file first.") }
+    var convertingStatus: String { text("正在转换，请稍候…", "Converting, please wait...") }
+    var conversionFailedStatus: String { text("转换失败，请查看日志。", "Conversion failed. Please check the logs.") }
+    var conversionFailedShort: String { text("转换失败。", "Conversion failed.") }
+    var missingMarkitdown: String {
+        text(
+            """
+            未找到全局 markitdown。
+
+            请先确认 pipx 安装成功，并且存在这个命令：
+            ~/.local/bin/markitdown
+            """,
+            """
+            Global markitdown was not found.
+
+            Please make sure pipx installed it successfully and this command exists:
+            ~/.local/bin/markitdown
+            """
+        )
+    }
+
+    func outputModeTitle(_ mode: OutputMode) -> String {
+        switch mode {
+        case .sharedDirectory:
+            text("统一输出目录", "Shared Output Folder")
+        case .sameAsSource:
+            text("输出到原文件目录", "Source File Folder")
+        }
+    }
+
+    func preferenceTitle(_ preference: AppLanguagePreference) -> String {
+        switch preference {
+        case .system:
+            text("跟随系统", "Follow System")
+        case .chinese:
+            "中文"
+        case .english:
+            "English"
+        }
+    }
+
+    func selectedFilesStatus(_ count: Int) -> String {
+        text("已选择 \(count) 个文件。", "\(count) file(s) selected.")
+    }
+
+    func clearedFilesStatus() -> String {
+        text("文件列表已清空。", "File list cleared.")
+    }
+
+    func retainedFilesStatus(_ count: Int) -> String {
+        text("已保留 \(count) 个文件。", "\(count) file(s) remaining.")
+    }
+
+    func conversionCompletedStatus(_ count: Int) -> String {
+        text("转换完成，共处理 \(count) 个文件。", "Conversion complete. Processed \(count) file(s).")
+    }
+
+    func conversionCompletedAlert(_ count: Int) -> String {
+        text("全部完成，成功生成 \(count) 个 Markdown 文件。", "Done. Generated \(count) Markdown file(s).")
+    }
+
+    func latestCompletedStatus(_ filename: String) -> String {
+        text("最近完成：\(filename)", "Latest completed: \(filename)")
+    }
+
+    func logStartConversion() -> String {
+        text("开始转换任务。", "Started conversion task.")
+    }
+
+    func logProcessing(index: Int, total: Int, path: String) -> String {
+        text("[\(index)/\(total)] 正在处理：\(path)", "[\(index)/\(total)] Processing: \(path)")
+    }
+
+    func logGenerated(_ path: String) -> String {
+        text("已生成：\(path)", "Generated: \(path)")
+    }
+
+    func logFailure(_ message: String) -> String {
+        text("转换失败：\(message)", "Conversion failed: \(message)")
+    }
+}
 
 @main
 struct MarkitdownKitMacApp: App {
+    @StateObject private var localization = LocalizationController()
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .frame(minWidth: 720, minHeight: 460)
+            ContentView(localization: localization)
+                .frame(minWidth: 720, minHeight: 560)
         }
         .windowResizability(.contentMinSize)
+
+        Settings {
+            SettingsView(localization: localization)
+        }
     }
 }
 
@@ -19,15 +205,6 @@ enum OutputMode: String, CaseIterable, Identifiable {
     case sameAsSource
 
     var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .sharedDirectory:
-            "统一输出目录"
-        case .sameAsSource:
-            "输出到原文件目录"
-        }
-    }
 }
 
 struct ConversionLog: Identifiable {
@@ -37,16 +214,76 @@ struct ConversionLog: Identifiable {
 
 @MainActor
 final class AppViewModel: ObservableObject {
+    enum StatusState {
+        case idle
+        case selectedFiles(Int)
+        case outputDirectoryUpdated
+        case filesCleared
+        case filesRemaining(Int)
+        case converting
+        case conversionCompleted(Int)
+        case conversionFailed
+        case latestCompleted(String)
+    }
+
+    enum AlertState {
+        case emptySelection
+        case conversionCompleted(Int)
+        case custom(String)
+    }
+
     @Published var selectedFiles: [URL] = []
     @Published var outputMode: OutputMode = .sameAsSource
     @Published var outputDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Desktop/MarkItDown Output", isDirectory: true)
     @Published var logs: [ConversionLog] = []
-    @Published var statusText = "请选择文件，然后点击“一键转换”。"
+    @Published var statusState: StatusState = .idle
     @Published var isConverting = false
-    @Published var alertMessage: String?
+    @Published var alertState: AlertState?
 
     private let fileManager = FileManager.default
+    private let stringsProvider: () -> AppStrings
+
+    init(stringsProvider: @escaping () -> AppStrings) {
+        self.stringsProvider = stringsProvider
+    }
+
+    var statusText: String {
+        let strings = stringsProvider()
+        switch statusState {
+        case .idle:
+            return strings.text("请选择文件，然后点击“一键转换”。", "Choose files, then click “Convert”.")
+        case .selectedFiles(let count):
+            return strings.selectedFilesStatus(count)
+        case .outputDirectoryUpdated:
+            return strings.outputDirectoryUpdated
+        case .filesCleared:
+            return strings.clearedFilesStatus()
+        case .filesRemaining(let count):
+            return strings.retainedFilesStatus(count)
+        case .converting:
+            return strings.convertingStatus
+        case .conversionCompleted(let count):
+            return strings.conversionCompletedStatus(count)
+        case .conversionFailed:
+            return strings.conversionFailedStatus
+        case .latestCompleted(let filename):
+            return strings.latestCompletedStatus(filename)
+        }
+    }
+
+    var alertMessage: String? {
+        guard let alertState else { return nil }
+        let strings = stringsProvider()
+        switch alertState {
+        case .emptySelection:
+            return strings.emptySelectionAlert
+        case .conversionCompleted(let count):
+            return strings.conversionCompletedAlert(count)
+        case .custom(let message):
+            return message
+        }
+    }
 
     func chooseFiles() {
         let panel = NSOpenPanel()
@@ -58,7 +295,7 @@ final class AppViewModel: ObservableObject {
             let newFiles = panel.urls.filter { !self.selectedFiles.contains($0) }
             self.selectedFiles.append(contentsOf: newFiles)
             if !newFiles.isEmpty {
-                self.statusText = "已选择 \(self.selectedFiles.count) 个文件。"
+                self.statusState = .selectedFiles(self.selectedFiles.count)
             }
         }
     }
@@ -72,7 +309,7 @@ final class AppViewModel: ObservableObject {
         selectedFiles.append(contentsOf: newFiles)
 
         if !newFiles.isEmpty {
-            statusText = "已选择 \(selectedFiles.count) 个文件。"
+            statusState = .selectedFiles(selectedFiles.count)
         }
     }
 
@@ -85,18 +322,18 @@ final class AppViewModel: ObservableObject {
         panel.begin { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
             self?.outputDirectory = url
-            self?.statusText = "输出目录已更新。"
+            self?.statusState = .outputDirectoryUpdated
         }
     }
 
     func removeSelected(indexSet: IndexSet) {
         selectedFiles.remove(atOffsets: indexSet)
-        statusText = selectedFiles.isEmpty ? "文件列表已清空。" : "已保留 \(selectedFiles.count) 个文件。"
+        statusState = selectedFiles.isEmpty ? .filesCleared : .filesRemaining(selectedFiles.count)
     }
 
     func clearFiles() {
         selectedFiles.removeAll()
-        statusText = "文件列表已清空。"
+        statusState = .filesCleared
     }
 
     func openOutputDirectory() {
@@ -109,7 +346,7 @@ final class AppViewModel: ObservableObject {
     func startConversion() {
         guard !isConverting else { return }
         guard !selectedFiles.isEmpty else {
-            alertMessage = "请先添加至少一个要转换的文件。"
+            alertState = .emptySelection
             return
         }
 
@@ -119,20 +356,20 @@ final class AppViewModel: ObservableObject {
 
         logs.removeAll()
         isConverting = true
-        statusText = "正在转换，请稍候…"
-        appendLog("开始转换任务。")
+        statusState = .converting
+        appendLog(stringsProvider().logStartConversion())
 
         Task {
             do {
                 try await convertAll()
                 isConverting = false
-                statusText = "转换完成，共处理 \(selectedFiles.count) 个文件。"
-                alertMessage = "全部完成，成功生成 \(selectedFiles.count) 个 Markdown 文件。"
+                statusState = .conversionCompleted(selectedFiles.count)
+                alertState = .conversionCompleted(selectedFiles.count)
             } catch {
                 isConverting = false
-                statusText = "转换失败，请查看日志。"
-                appendLog("转换失败：\(error.localizedDescription)")
-                alertMessage = error.localizedDescription
+                statusState = .conversionFailed
+                appendLog(stringsProvider().logFailure(error.localizedDescription))
+                alertState = .custom(error.localizedDescription)
             }
         }
     }
@@ -141,10 +378,10 @@ final class AppViewModel: ObservableObject {
         let total = selectedFiles.count
         for (index, sourceURL) in selectedFiles.enumerated() {
             let outputURL = outputMode == .sameAsSource ? sourceURL.deletingLastPathComponent() : outputDirectory
-            appendLog("[\(index + 1)/\(total)] 正在处理：\(sourceURL.path)")
+            appendLog(stringsProvider().logProcessing(index: index + 1, total: total, path: sourceURL.path))
             let resultPath = try runConversion(sourceURL: sourceURL, outputURL: outputURL)
-            appendLog("已生成：\(resultPath)")
-            statusText = "最近完成：\(sourceURL.lastPathComponent)"
+            appendLog(stringsProvider().logGenerated(resultPath))
+            statusState = .latestCompleted(sourceURL.lastPathComponent)
         }
     }
 
@@ -177,7 +414,7 @@ final class AppViewModel: ObservableObject {
         let errorText = String(decoding: errorData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard process.terminationStatus == 0 else {
-            throw AppError.message(errorText.isEmpty ? "转换失败。": errorText)
+            throw AppError.message(errorText.isEmpty ? stringsProvider().conversionFailedShort : errorText)
         }
 
         return outputText.isEmpty ? outputFileURL.path : outputText
@@ -219,12 +456,7 @@ final class AppViewModel: ObservableObject {
         }
 
         throw AppError.message(
-            """
-            未找到全局 markitdown。
-
-            请先确认 pipx 安装成功，并且存在这个命令：
-            ~/.local/bin/markitdown
-            """
+            stringsProvider().missingMarkitdown
         )
     }
 
@@ -255,7 +487,23 @@ enum AppError: LocalizedError {
 }
 
 struct ContentView: View {
-    @StateObject private var viewModel = AppViewModel()
+    @ObservedObject private var localization: LocalizationController
+    @StateObject private var viewModel: AppViewModel
+
+    init(localization: LocalizationController) {
+        self._localization = ObservedObject(wrappedValue: localization)
+        _viewModel = StateObject(
+            wrappedValue: AppViewModel(
+                stringsProvider: {
+                    AppStrings(language: localization.resolvedLanguage)
+                }
+            )
+        )
+    }
+
+    private var strings: AppStrings {
+        AppStrings(language: localization.resolvedLanguage)
+    }
 
     var body: some View {
         ZStack {
@@ -269,28 +517,27 @@ struct ContentView: View {
             )
             .ignoresSafeArea()
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    header
-                    topRow
-                    mainRow
-                    footer
-                }
-                .padding(12)
+            VStack(alignment: .leading, spacing: 10) {
+                header
+                topRow
+                mainRow
+                footer
             }
+            .padding(12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .dropDestination(for: URL.self) { items, _ in
             viewModel.addDroppedFiles(items)
             return !items.isEmpty
         }
-        .alert("提示", isPresented: Binding(get: {
-            viewModel.alertMessage != nil
+        .alert(strings.alertTitle, isPresented: Binding(get: {
+            viewModel.alertState != nil
         }, set: { newValue in
             if !newValue {
-                viewModel.alertMessage = nil
+                viewModel.alertState = nil
             }
         })) {
-            Button("知道了", role: .cancel) {}
+            Button(strings.alertDismiss, role: .cancel) {}
         } message: {
             Text(viewModel.alertMessage ?? "")
         }
@@ -316,9 +563,9 @@ struct ContentView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("文件转 Markdown 小工具")
+            Text(strings.appTitle)
                 .font(.system(size: 20, weight: .bold))
-            Text("支持点选和拖拽导入文件。")
+            Text(strings.appSubtitle)
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         }
@@ -326,19 +573,19 @@ struct ContentView: View {
     }
 
     private var settingsCard: some View {
-        CompactCardView {
+        CompactCardView(fixedHeight: topCardHeight) {
             VStack(alignment: .leading, spacing: 12) {
-                Text("输出设置")
+                Text(strings.settingsTitle)
                     .font(.system(size: 15, weight: .bold))
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("输出方式")
+                    Text(strings.outputModeLabel)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.secondary)
 
-                    Picker("输出方式", selection: $viewModel.outputMode) {
+                    Picker(strings.outputModeLabel, selection: $viewModel.outputMode) {
                         ForEach(OutputMode.allCases) { mode in
-                            Text(mode.title).tag(mode)
+                            Text(strings.outputModeTitle(mode)).tag(mode)
                         }
                     }
                     .pickerStyle(.segmented)
@@ -350,28 +597,31 @@ struct ContentView: View {
                         TextField("", text: .constant(viewModel.outputDirectory.path))
                             .textFieldStyle(.roundedBorder)
                             .disabled(true)
-                        Button("选择文件夹") {
+                        Button(strings.chooseFolder) {
                             viewModel.chooseOutputDirectory()
                         }
                         .controlSize(.small)
                     }
                 } else {
-                    Text("每个文件会在它自己的所在目录里生成 `.md`。")
+                    Text(strings.sameDirectoryHint)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 }
+
+                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 
     private var filesCard: some View {
-        CardView {
+        CardView(fixedHeight: mainCardHeight) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("待转换文件")
+                Text(strings.filesTitle)
                     .font(.system(size: 15, weight: .bold))
 
-                Text("可以点“添加文件”，也可以把文件直接拖到这个窗口里。")
+                Text(strings.filesHint)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
 
@@ -383,7 +633,8 @@ struct ContentView: View {
                     }
                     .onDelete(perform: viewModel.removeSelected)
                 }
-                .frame(minHeight: 180)
+                .frame(maxHeight: .infinity)
+                .scrollIndicators(.visible)
                 .overlay {
                     if viewModel.selectedFiles.isEmpty {
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -394,9 +645,9 @@ struct ContentView: View {
                                     Image(systemName: "tray.and.arrow.down")
                                         .font(.system(size: 22))
                                         .foregroundStyle(.secondary)
-                                    Text("拖拽文件到这里")
+                                    Text(strings.emptyDropTitle)
                                         .font(.system(size: 13, weight: .medium))
-                                    Text("或点击下方按钮选择文件")
+                                    Text(strings.emptyDropSubtitle)
                                         .font(.system(size: 10))
                                         .foregroundStyle(.secondary)
                                 }
@@ -406,27 +657,27 @@ struct ContentView: View {
                 }
 
                 HStack(spacing: 10) {
-                    Button("添加文件") {
+                    Button(strings.addFiles) {
                         viewModel.chooseFiles()
                     }
                     .controlSize(.small)
-                    Button("清空列表") {
+                    Button(strings.clearList) {
                         viewModel.clearFiles()
                     }
                     .controlSize(.small)
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 320, alignment: .topLeading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 
     private var actionsCard: some View {
-        CompactCardView {
+        CompactCardView(fixedHeight: topCardHeight) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("操作")
+                Text(strings.actionsTitle)
                     .font(.system(size: 15, weight: .bold))
 
-                Text("支持批量处理，默认在源文件旁生成 `.md` 文件。")
+                Text(strings.actionsHint)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
@@ -434,25 +685,27 @@ struct ContentView: View {
                 Button(action: {
                     viewModel.startConversion()
                 }) {
-                    Text(viewModel.isConverting ? "正在转换…" : "一键转换")
+                    Text(viewModel.isConverting ? strings.convertingButton : strings.convertButton)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(AccentButtonStyle())
                 .disabled(viewModel.isConverting)
 
-                Button("打开输出目录") {
+                Button(strings.openOutputDirectory) {
                     viewModel.openOutputDirectory()
                 }
                 .buttonStyle(SoftButtonStyle())
+
+                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 
     private var logCard: some View {
-        CardView {
+        CardView(fixedHeight: mainCardHeight) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("运行日志")
+                Text(strings.logsTitle)
                     .font(.system(size: 15, weight: .bold))
 
                 ScrollView {
@@ -464,9 +717,10 @@ struct ContentView: View {
                         }
                     }
                 }
-                .frame(minHeight: 280)
+                .frame(maxHeight: .infinity)
+                .scrollIndicators(.visible)
             }
-            .frame(maxWidth: .infinity, minHeight: 320, alignment: .topLeading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 
@@ -478,13 +732,43 @@ struct ContentView: View {
     }
 }
 
+struct SettingsView: View {
+    @ObservedObject var localization: LocalizationController
+
+    private var strings: AppStrings {
+        AppStrings(language: localization.resolvedLanguage)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(strings.languageTitle)
+                .font(.system(size: 16, weight: .bold))
+
+            Picker(strings.languageTitle, selection: $localization.preference) {
+                ForEach(AppLanguagePreference.allCases) { preference in
+                    Text(strings.preferenceTitle(preference)).tag(preference)
+                }
+            }
+            .pickerStyle(.radioGroup)
+            .labelsHidden()
+
+            Spacer()
+        }
+        .padding(20)
+        .frame(width: 320, height: 180, alignment: .topLeading)
+    }
+}
+
 struct CardView<Content: View>: View {
+    var fixedHeight: CGFloat? = nil
     @ViewBuilder let content: Content
 
     var body: some View {
         VStack(alignment: .leading) {
             content
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(height: fixedHeight)
         .padding(14)
         .background(.white.opacity(0.78))
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
@@ -497,12 +781,15 @@ struct CardView<Content: View>: View {
 }
 
 struct CompactCardView<Content: View>: View {
+    var fixedHeight: CGFloat? = nil
     @ViewBuilder let content: Content
 
     var body: some View {
         VStack(alignment: .leading) {
             content
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(height: fixedHeight)
         .padding(14)
         .background(.white.opacity(0.78))
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
