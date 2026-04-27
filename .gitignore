@@ -4,3 +4,6 @@
 .build-release
 .swift-home
 MarkitdownKitMac.app
+MarkitdownKitMac-app.zip
+src/markitdown_kit.egg-info/
+src/markitdown_kit/__pycache__/
